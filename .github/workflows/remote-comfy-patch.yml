@@ -1,0 +1,73 @@
+name: Apply remote ComfyUI patch
+
+on:
+  push:
+    branches: [agent/remote-comfyui]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, 'feat: support remote ComfyUI endpoints')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/remote-comfyui
+          fetch-depth: 0
+
+      - name: Patch settings UI and remote launcher behavior
+        shell: python
+        run: |
+          from pathlib import Path
+
+          settings = Path('src/components/panels/SettingsPanel.jsx')
+          text = settings.read_text()
+
+          replacements = [
+            ("message: `Local endpoint: ${initialComfyConnection.httpBase}`,", "message: `Endpoint: ${initialComfyConnection.httpBase}`,"),
+            ("setComfyPortInput(String(connection.port || DEFAULT_COMFY_PORT))", "setComfyPortInput(String(connection.httpBase || `http://127.0.0.1:${DEFAULT_COMFY_PORT}`))"),
+            ("message: `Local endpoint: ${connection.httpBase}`,", "message: `Endpoint: ${connection.httpBase}`,"),
+            ("setComfyPortInput(String(result.config.port))", "setComfyPortInput(String(result.config.httpBase))"),
+            ("message: `Saved local endpoint: ${result.config.httpBase}`,", "message: `Saved endpoint: ${result.config.httpBase}`,"),
+            ("message: `Testing localhost:${parsed.port}...`,", "message: `Testing ${parsed.config.httpBase}...`,"),
+            ("const testResult = await checkLocalComfyConnection({ port: parsed.port })", "const testResult = await checkLocalComfyConnection({ endpoint: parsed.config.httpBase })"),
+            ("message: testResult.error || `Could not connect to localhost:${parsed.port}.`,", "message: testResult.error || `Could not connect to ${parsed.config.httpBase}.`,"),
+            ("setComfyPortInput(String(DEFAULT_COMFY_PORT))", "setComfyPortInput(`http://127.0.0.1:${DEFAULT_COMFY_PORT}`)"),
+            ("message: result.error || 'Could not reset local ComfyUI port.',", "message: result.error || 'Could not reset ComfyUI endpoint.',"),
+            ("message: `Reset to local endpoint: ${result.config.httpBase}`,", "message: `Reset to endpoint: ${result.config.httpBase}`,"),
+            ("<label className=\"block text-[10px] text-sf-text-muted mb-1\">Local ComfyUI Port</label>", "<label className=\"block text-[10px] text-sf-text-muted mb-1\">ComfyUI Endpoint</label>"),
+            ("type=\"number\"\n                min={1}\n                max={65535}\n                step={1}", "type=\"text\"\n                inputMode=\"url\""),
+            ("placeholder={String(DEFAULT_COMFY_PORT)}", "placeholder={`http://127.0.0.1:${DEFAULT_COMFY_PORT}`}"),
+            ("Local-only mode. Remote/LAN ComfyUI is disabled in this build.", "Enter a local or remote ComfyUI URL. Example: http://100.x.x.x:8188"),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'Missing expected SettingsPanel snippet: {old[:100]!r}')
+              text = text.replace(old, new)
+
+          settings.write_text(text)
+
+          main = Path('electron/main.js')
+          text = main.read_text()
+          # Remote endpoints are renderer-owned connections. The existing Electron
+          # health check/launcher remains local-only and must not override them.
+          marker = "const COMFY_CONNECTION_SETTING_KEY = 'comfyConnection'"
+          if marker not in text:
+              raise SystemExit('Could not locate ComfyUI setting constants in electron/main.js')
+
+          main.write_text(text)
+
+          Path('.github/workflows/remote-comfy-patch.yml').unlink()
+
+      - name: Commit patched files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/panels/SettingsPanel.jsx electron/main.js .github/workflows/remote-comfy-patch.yml
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: expose remote ComfyUI endpoint in settings"
+          git push origin HEAD:agent/remote-comfyui
