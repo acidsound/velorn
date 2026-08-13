@@ -21,7 +21,7 @@ function SettingsPanel() {
   const [comfyPortInput, setComfyPortInput] = useState(String(initialComfyConnection.port || DEFAULT_COMFY_PORT))
   const [comfyConnectionState, setComfyConnectionState] = useState({
     status: 'idle',
-    message: `Local endpoint: ${initialComfyConnection.httpBase}`,
+    message: `Endpoint: ${initialComfyConnection.httpBase}`,
   })
   const [outputPath, setOutputPath] = useState('')
   const [workflowPath, setWorkflowPath] = useState('')
@@ -55,10 +55,10 @@ function SettingsPanel() {
       }
     })()
     hydrateLocalComfyConnection().then((connection) => {
-      setComfyPortInput(String(connection.port || DEFAULT_COMFY_PORT))
+      setComfyPortInput(String(connection.httpBase || `http://127.0.0.1:${DEFAULT_COMFY_PORT}`))
       setComfyConnectionState({
         status: 'idle',
-        message: `Local endpoint: ${connection.httpBase}`,
+        message: `Endpoint: ${connection.httpBase}`,
       })
     }).catch(() => {
       setComfyConnectionState({
@@ -87,10 +87,10 @@ function SettingsPanel() {
       })
       return false
     }
-    setComfyPortInput(String(result.config.port))
+    setComfyPortInput(String(result.config.httpBase))
     setComfyConnectionState({
       status: 'idle',
-      message: `Saved local endpoint: ${result.config.httpBase}`,
+      message: `Saved endpoint: ${result.config.httpBase}`,
     })
     return true
   }
@@ -106,9 +106,9 @@ function SettingsPanel() {
     }
     setComfyConnectionState({
       status: 'testing',
-      message: `Testing localhost:${parsed.port}...`,
+      message: `Testing ${parsed.config.httpBase}...`,
     })
-    const testResult = await checkLocalComfyConnection({ port: parsed.port })
+    const testResult = await checkLocalComfyConnection({ endpoint: parsed.config.httpBase })
     if (testResult.ok) {
       setComfyConnectionState({
         status: 'success',
@@ -118,23 +118,23 @@ function SettingsPanel() {
     }
     setComfyConnectionState({
       status: 'error',
-      message: testResult.error || `Could not connect to localhost:${parsed.port}.`,
+      message: testResult.error || `Could not connect to ${parsed.config.httpBase}.`,
     })
   }
 
   const handleResetComfyConnection = async () => {
-    setComfyPortInput(String(DEFAULT_COMFY_PORT))
+    setComfyPortInput(`http://127.0.0.1:${DEFAULT_COMFY_PORT}`)
     const result = await saveLocalComfyConnectionPort(DEFAULT_COMFY_PORT)
     if (!result.success) {
       setComfyConnectionState({
         status: 'error',
-        message: result.error || 'Could not reset local ComfyUI port.',
+        message: result.error || 'Could not reset ComfyUI endpoint.',
       })
       return
     }
     setComfyConnectionState({
       status: 'idle',
-      message: `Reset to local endpoint: ${result.config.httpBase}`,
+      message: `Reset to endpoint: ${result.config.httpBase}`,
     })
   }
 
@@ -295,20 +295,18 @@ function SettingsPanel() {
         <Section id="connection" icon={Server} title="ComfyUI Connection">
           <div className="space-y-2">
             <div>
-              <label className="block text-[10px] text-sf-text-muted mb-1">Local ComfyUI Port</label>
+              <label className="block text-[10px] text-sf-text-muted mb-1">ComfyUI Endpoint</label>
               <input
-                type="number"
-                min={1}
-                max={65535}
-                step={1}
+                type="text"
+                inputMode="url"
                 value={comfyPortInput}
                 onChange={(e) => setComfyPortInput(e.target.value)}
                 onBlur={() => { void handleSaveComfyConnection() }}
-                placeholder={String(DEFAULT_COMFY_PORT)}
+                placeholder={`http://127.0.0.1:${DEFAULT_COMFY_PORT}`}
                 className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1.5 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
               />
               <p className="text-[9px] text-sf-text-muted mt-1">
-                Local-only mode. Remote/LAN ComfyUI is disabled in this build.
+                Enter a local or remote ComfyUI URL. Example: http://100.x.x.x:8188
               </p>
             </div>
             <div className="flex items-center justify-between gap-1.5">
